@@ -127,12 +127,20 @@ class ContactPredHead(hk.Module):
         head_weights: jnp.ndarray
         ) -> jnp.ndarray:
 
+        mask_tokens = (tokens == self.eos_idx) | (tokens == 0) | (tokens == self.padding_idx) # B x T
+        mask = ~mask_tokens[:, None, None, :] # B x L x H x T
+        mask = jnp.einsum("blhT, blht->blhtT", mask, mask) # B x L x H x T x T
+        head_weights = head_weights * mask
+        
         head_weights = self.avg_prod_correct(self.symmetrize(head_weights))
         B, layers, heads, T, _ = head_weights.shape
         head_weights = head_weights.reshape(B, layers*heads, T, T) 
         head_weights = jnp.transpose(head_weights, axes=(0, 2, 3, 1))
         
-        return jax.nn.sigmoid(hk.Linear(1, name="regression")(head_weights))[:, :, :, 0]
+        contact_preds = jax.nn.sigmoid(hk.Linear(1, name="regression")(head_weights))
+        contact_preds = contact_preds[:, :, :, 0] # last index has dim=1
+
+        return contact_preds * mask[:, 0, 0, :, :]
 
     @staticmethod
     def avg_prod_correct(x):
@@ -187,7 +195,8 @@ class ESM1b(hk.Module):
 
         if self.head_weights:
             all_attn_weights = jnp.stack(all_attn_weights, axis=1)
-            
+            all_attn_weights = all_attn_weights * att_mask[:, None, :, :, :]
+
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_after")(x)
         
         return {"embeddings": x, "head_weights": all_attn_weights}
@@ -209,4 +218,4 @@ class ESM1bContactPredictor(hk.Module):
         ) -> jnp.ndarray:
         
         output = ESM1b(head_weights=True, name="esm1b")(tokens)
-        return ContactPredHead()(output["embeddings"], output["head_weights"])
+        return ContactPredHead()(tokens, output["head_weights"])
