@@ -1,21 +1,73 @@
 from typing import Optional
 
+from jax.interpreters.xla import xla_primitive_callable
+
 import haiku as hk
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
+import numpy as np
 
+
+# Class is modified from MultiHeadAttention here
+# https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/attention.py
+# Full original Apache 2.0 license here https://github.com/deepmind/dm-haiku/blob/main/LICENSE
 class SelfMultiHeadAttention(hk.MultiHeadAttention):
-    """Self attention with mask applied"""
+    """Self attention with mask applied. Modified from 
+    original implementation to be able to return attention
+    weights (needed for contact prediction)"""
     
-    def __call__(
-        self, 
-        x: jnp.ndarray,
-        att_mask: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+    def __init__(
+        self,
+        num_heads: int,
+        key_size: int,
+        w_init_scale: float,
+        head_weights: Optional[bool] = False,
+        value_size: Optional[int] = None,
+        model_size: Optional[int] = None,
+        name: Optional[str] = None,
+    ):
+        super().__init__(num_heads,
+                        key_size,
+                        w_init_scale,
+                        value_size,
+                        model_size,
+                        name)
 
-        return super().__call__(query=x, key=x, value=x, mask=att_mask)
+        self.head_weights = head_weights
+
+    def __call__(
+        self,
+        x: jnp.ndarray,
+        mask: Optional[jnp.ndarray] = None,
+    ) -> jnp.ndarray:
+        query_heads = self._linear_projection(x, self.key_size, "query")
+        key_heads = self._linear_projection(x, self.key_size, "key")
+        value_heads = self._linear_projection(x, self.value_size, "value")
+
+        attn_logits = jnp.einsum("...thd,...Thd->...htT", query_heads, key_heads)
+        sqrt_key_size = np.sqrt(self.key_size).astype(x.dtype)
+        attn_logits = attn_logits / sqrt_key_size
+
+        if mask is not None:
+            assert len(mask.shape) == len(attn_logits.shape)
+            attn_logits = jnp.where(mask, attn_logits, -1e30)
+
+        attn_weights = jax.nn.softmax(attn_logits)
+        attn = jnp.einsum("...htT,...Thd->...thd", attn_weights, value_heads)
+        
+        # Concatenate attention matrix of all heads into a single vector.
+        attn_vec = jnp.reshape(attn, (*x.shape[:-1], -1))
+        x = hk.Linear(self.model_size, w_init=self.w_init)(attn_vec)
+        
+        # Return attention weights if requested at initialization
+        if self.head_weights:
+            return x, attn_weights
+        else:
+            return x
 
 
 class TransformerLayer(hk.Module):
+    """Each of the blocks that form the 33-layer tower"""
     def __init__(self, 
                 num_heads:int, 
                 key_size:int, 
@@ -28,7 +80,8 @@ class TransformerLayer(hk.Module):
     def __call__(
         self, 
         x: jnp.ndarray,
-        att_mask: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+        att_mask: Optional[jnp.ndarray] = None
+        ) -> jnp.ndarray:
 
         res = x 
 
@@ -45,6 +98,7 @@ class TransformerLayer(hk.Module):
         return x
 
 class LearnedPositionalEmbeddings(hk.Module):
+    """Position embeddings to be added to token embeddings"""
     def __init__(self, 
                 vocab_size: int,
                 embed_dim: int,
@@ -70,13 +124,24 @@ class ESM1b(hk.Module):
         self.padding_idx = padding_idx
         super().__init__(name=name)
     
-    def __call__(self, tokens: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, 
+                tokens: jnp.ndarray
+                ) -> jnp.ndarray:
         padding_mask = tokens == self.padding_idx
 
         att_mask = ~padding_mask[:, None, :]
         att_mask = jnp.einsum("bhT, bht->bhtT", att_mask, att_mask)
 
         x = hk.Embed(33, 1280)(tokens)
-        x = x + LearnedPositionalEmbeddings(1024, 1280)(tokens)
 
-        return x, att_mask
+        # 0.88 to undo RoBERTa's mask scaling factor
+        x = 0.88 * x + LearnedPositionalEmbeddings(1024, 1280)(tokens)
+
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_before")(x)
+
+        for i in range(33):
+            x = TransformerLayer(20, 64, name=f"transformer_layer_{i}")(x, att_mask)
+
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_after")(x)
+        
+        return x

@@ -9,7 +9,7 @@ _tok_to_idx = {'<cls>': 0, '<pad>': 1, '<eos>': 2, '<unk>': 3, 'L': 4,
             '-': 30, '<null_1>': 31, '<mask>': 32}
 
 
-def converter(raw_batch):
+def convert(raw_batch):
     labels, sequences = list(zip(*raw_batch))
 
     batch_size = len(sequences)
