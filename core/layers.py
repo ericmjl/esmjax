@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 from jax.interpreters.xla import xla_primitive_callable
 
@@ -15,34 +15,16 @@ class SelfMHA(hk.MultiHeadAttention):
     """Self multi-head attention with mask applied. Modified from 
     original implementation to be able to return attention
     weights (needed for contact prediction)"""
-    
-    def __init__(
-        self,
-        num_heads: int,
-        key_size: int,
-        w_init_scale: float,
-        head_weights: Optional[bool] = False,
-        value_size: Optional[int] = None,
-        model_size: Optional[int] = None,
-        name: Optional[str] = None,
-    ):
-        super().__init__(num_heads,
-                        key_size,
-                        w_init_scale,
-                        value_size,
-                        model_size,
-                        name)
-
-        self.head_weights = head_weights
 
     def __call__(
         self,
         x: jnp.ndarray,
         mask: Optional[jnp.ndarray] = None,
-    ) -> jnp.ndarray:
+    ) -> "dict[str, jnp.ndarray]":
 
         attn_weights = self.attn_weights(x, mask)
-        return self.compute_tokens(x, attn_weights)
+        x = self.compute_tokens(x, attn_weights)
+        return {"x": x, "attn_weights": attn_weights}
         
     @hk.transparent
     def attn_weights(
@@ -83,25 +65,23 @@ class TransformerLayer(hk.Module):
     def __init__(self, 
                 num_heads:int, 
                 key_size:int, 
-                head_weights: Optional[bool] = False,
                 name: Optional[str]=None):
 
         super().__init__(name=name)
         self.num_heads = num_heads
-        self.head_weights = head_weights
         self.key_size = key_size
     
     def __call__(
         self, 
         x: jnp.ndarray,
         att_mask: Optional[jnp.ndarray] = None
-        ) -> jnp.ndarray:
+        ) -> "dict[str, jnp.ndarray]":
 
         res = x 
 
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="self_attn_layer_norm")(x)
-        x = SelfMHA(self.num_heads, self.key_size, 1, self.head_weights)(x, att_mask)
-
+        output = SelfMHA(self.num_heads, self.key_size, 1)(x, att_mask)
+        x = output["x"]
         x = res + x 
 
         res = x 
@@ -109,8 +89,9 @@ class TransformerLayer(hk.Module):
         x = jax.nn.gelu(hk.Linear(self.num_heads * self.key_size * 4, name="fc1")(x), approximate=False)
         x = hk.Linear(self.num_heads * self.key_size, name="fc2")(x)
         x = res + x
-
-        return x
+        
+        output["x"] = x
+        return output
 
 class LearnedPositionalEmbeddings(hk.Module):
     """Position embeddings to be added to token embeddings"""
@@ -134,14 +115,16 @@ class LearnedPositionalEmbeddings(hk.Module):
 class ESM1b(hk.Module):
     def __init__(self,
                 padding_idx: Optional[int] = 1,
+                head_weights: Optional[bool] = False,
                 name: Optional[str] = None):
         
         self.padding_idx = padding_idx
+        self.head_weights = head_weights
         super().__init__(name=name)
     
     def __call__(self, 
                 tokens: jnp.ndarray
-                ) -> jnp.ndarray:
+                ) -> "dict[str, jnp.ndarray]":
         padding_mask = tokens == self.padding_idx
 
         att_mask = ~padding_mask[:, None, :]
@@ -154,9 +137,18 @@ class ESM1b(hk.Module):
 
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_before")(x)
 
-        for i in range(33):
-            x = TransformerLayer(20, 64, name=f"transformer_layer_{i}")(x, att_mask)
+        all_attn_weights = []
 
+        for i in range(33):
+            output = TransformerLayer(20, 64, name=f"transformer_layer_{i}")(x, att_mask)
+            x = output["x"]
+
+            if self.head_weights:
+                all_attn_weights.append(output["attn_weights"])
+
+        if self.head_weights:
+            all_attn_weights = jnp.stack(all_attn_weights)
+            
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_after")(x)
         
-        return x
+        return {"embeds": x, "head_weights": all_attn_weights}
