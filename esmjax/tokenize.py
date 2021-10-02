@@ -1,5 +1,4 @@
 import numpy as np
-# import jax.numpy as jnp
 
 _tok_to_idx = {'<cls>': 0, '<pad>': 1, '<eos>': 2, '<unk>': 3, 'L': 4,
             'A': 5, 'G': 6, 'V': 7, 'S': 8, 'E': 9, 'R': 10, 'T': 11,
@@ -15,6 +14,9 @@ def convert(raw_batch):
     batch_size = len(sequences)
     max_seq_len = max([len(seq) for seq in sequences])
 
+    # round seq_len to nearest power of 2 for efficient inference
+    max_seq_len = nearest_pow_2(max_seq_len)
+    
     # +2 for start <cls> and end <eos> token
     tokens = np.full((batch_size, max_seq_len + 2), _tok_to_idx['<pad>'], dtype=np.int32)
 
@@ -26,3 +28,6 @@ def convert(raw_batch):
         tokens[i, len(seq)+1] = _tok_to_idx['<eos>']
 
     return labels, sequences, tokens
+
+def nearest_pow_2(val: int) -> int:
+    return int(2**np.ceil(np.log2(val)))
