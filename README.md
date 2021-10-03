@@ -24,6 +24,6 @@ There's three notebooks in this repository (in the `/notebooks` folder) to help 
 * `weight_porting.ipynb`: A more "optional" notebook, that shows the scripts used to convert the PyTorch weights into a Haiku-ready format.
 
 #### Remarks
-This repository exists completely independently of that of the original authors; I personally just found the model very fascinating, and wanted to dig deeper, and eventually ended up reconstructing the model. Figured it may be of interest to others too! (There's still a bit more to do, primarily with packaging, but it's capable of generating protein embeddings on acceleration hardware)
+This repository exists independently of that of the original authors; I personally just found the model very fascinating, and wanted to dig deeper. Figured it may be of interest to others too! (There's still a bit more to do, primarily with packaging, but it's already capable of generating protein embeddings on acceleration hardware)
 
 Access to TPUs was generously provided through the [TPU Research Cloud](https://sites.research.google/trc/about/). 
