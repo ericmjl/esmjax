@@ -6,7 +6,7 @@ import numpy as np
 
 
 def save_model(param_dict: "dict[str, dict[str, np.ndarray]]", 
-            fname: Optional[str] = "weights/esm1b.h5",
+            fname: Optional[str] = "data/esm1b.h5",
             ) -> None:
     """A two level mapping, whose innermost values are numpy arrays.
     Saves them into an HDF5 file, preserving the dict structure. Load
@@ -29,9 +29,10 @@ def save_model(param_dict: "dict[str, dict[str, np.ndarray]]",
                 layer_group.create_dataset(weight_name, data=weight_arr)
 
 
-def load_model(h5_fname: Optional[str]
+def load_model(h5_fname: Optional[str] = "data/esm1b.h5",
             ) -> "dict[str, dict[str, np.ndarray]]":
-    """[summary]
+    """Load in the model in the two-level dict as originally
+    saved by `save_model`.
 
     Args:
         h5_fname (Optional[str]): saved filename, originally passed into `save_model`.
