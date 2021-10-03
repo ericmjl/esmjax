@@ -1,4 +1,4 @@
-# esmJAX
+# esmjax
 
 This repository provides a reimplementation of the 650M parameter ESM-1b protein language model originally introduced in [Rives et. al. (2021)](https://www.pnas.org/content/118/15/e2016239118). The original implementation was written in PyTorch, which you can find [here](https://github.com/facebookresearch/esm) and based on the fairseq framework. This implementation is written in Haiku/JAX, with the model weights ported over from the original PyTorch implementation. Since this effectively is pure JAX, all the standard features (jit, pmap, multi-TPU training with ease) come for free.
 
