@@ -9,12 +9,12 @@ Right now, this implementation is inference only, aimed at feature generation, a
 
 * **Per residue/whole sequence embeddings:** You can directly generate embeddings for the final transformer layer (that's layer 33, producing 1280 dimensional embeddings), which you can then use per-residue, or average them to get a whole protein embedding. For example, here's a subset of protein domains in the all-alpha helice folding class in [SCOPe](https://scop.berkeley.edu/) embedded using the model, then projected down to 3D space using [TriMap](https://github.com/eamid/trimap)
 
-![Features](../data/embeddings.png?raw=true)
+![Features](../images/embeddings.png?raw=true)
 
 
 * **Per head attention weights:** You can also generate the per-head attention weights for each of the 20 heads of the 33 self-attention layers in the model for downstream tasks. One provided with this implementation is the weights for the contact prediction head, which uses the 660 values per residue pair to compute 1 value between 0 and 1, indicating whether the residues are in contact in 3D space. (Note: d1n3ya_ is the same protein used in Fig. 5 of the original ESM paper)
 
-![Contacts](../data/contactpred.png?raw=true)
+![Contacts](../images/contactpred.jpg?raw=true)
 
 ## Notebooks
 There's three notebooks in this repository (in the `/notebooks` folder) to help you get started:
