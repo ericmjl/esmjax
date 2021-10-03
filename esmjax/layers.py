@@ -114,23 +114,12 @@ class LearnedPositionalEmbeddings(hk.Module):
 
 class ContactPredHead(hk.Module):
     def __init__(self,
-        padding_idx: Optional[int] = 1,
-        eos_idx: Optional[int] = 2,
         name: Optional[str] = None):
-
-        self.padding_idx = padding_idx
-        self.eos_idx = eos_idx
         super().__init__(name=name)
 
     def __call__(self, 
-        tokens: jnp.ndarray,
         head_weights: jnp.ndarray
         ) -> jnp.ndarray:
-
-        mask_tokens = (tokens == self.eos_idx) | (tokens == 0) | (tokens == self.padding_idx) # B x T
-        mask = ~mask_tokens[:, None, None, :] # B x L x H x T
-        mask = jnp.einsum("blhT, blht->blhtT", mask, mask) # B x L x H x T x T
-        head_weights = head_weights * mask
         
         head_weights = self.avg_prod_correct(self.symmetrize(head_weights))
         B, layers, heads, T, _ = head_weights.shape
@@ -140,7 +129,7 @@ class ContactPredHead(hk.Module):
         contact_preds = jax.nn.sigmoid(hk.Linear(1, name="regression")(head_weights))
         contact_preds = contact_preds[:, :, :, 0] # last index has dim=1
 
-        return contact_preds * mask[:, 0, 0, :, :]
+        return contact_preds 
 
     @staticmethod
     def avg_prod_correct(x):

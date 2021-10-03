@@ -8,20 +8,26 @@ from .layers import TransformerLayer, LearnedPositionalEmbeddings, ContactPredHe
 class ESM1b(hk.Module):
     def __init__(self,
         padding_idx: Optional[int] = 1,
+        eos_idx: Optional[int] = 2,
         head_weights: Optional[bool] = False,
+        contacts: Optional[bool] = False,
         name: Optional[str] = None):
         
         self.padding_idx = padding_idx
-        self.head_weights = head_weights
+        self.eos_idx = eos_idx
+        self.head_weights = head_weights or contacts
+        self.contacts = contacts
         super().__init__(name=name)
     
     def __call__(self, 
         tokens: jnp.ndarray
         ) -> "dict[str, jnp.ndarray]":
-        padding_mask = tokens == self.padding_idx
+        padding_mask_tokens = tokens == self.padding_idx
 
-        att_mask = ~padding_mask[:, None, :]
-        att_mask = jnp.einsum("bhT, bht->bhtT", att_mask, att_mask)
+        padding_mask_att = ~padding_mask_tokens[:, None, :]
+        padding_mask_att = jnp.einsum("bhT, bht->bhtT", padding_mask_att, padding_mask_att)
+
+        #---------
 
         x = hk.Embed(33, 1280)(tokens)
 
@@ -30,38 +36,34 @@ class ESM1b(hk.Module):
 
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_before")(x)
 
-        all_attn_weights = []
+        all_attn_weights = [] if self.head_weights else None
+        contacts = None
 
+        # construct a tower of 33 transformer layers
         for i in range(33):
-            output = TransformerLayer(20, 64, name=f"transformer_layer_{i}")(x, att_mask)
+            # 20 heads, each with 64 dim Q,K,V triplets
+            output = TransformerLayer(20, 64, name=f"transformer_layer_{i}")(x, padding_mask_att)
             x = output["x"]
 
             if self.head_weights:
                 all_attn_weights.append(output["attn_weights"])
+        #----------
+        # mask all <cls>, <eos> and <pad> embeddings, head_weights and contact_predictions
+        mask_tokens = (tokens == self.eos_idx) | (tokens == 0) | (tokens == self.padding_idx) # B x T
 
-        if self.head_weights:
+        # if head_weights was requested, stack them and mask out
+        if self.head_weights or self.contacts:
+            mask = ~mask_tokens[:, None, None, :] # B x 1 x 1 x T
+            mask = jnp.einsum("blhT, blht->blhtT", mask, mask) # B x 1 x 1 x T x T
+
             all_attn_weights = jnp.stack(all_attn_weights, axis=1)
-            all_attn_weights = all_attn_weights * att_mask[:, None, :, :, :]
+            all_attn_weights = all_attn_weights * mask
+
+            if self.contacts:
+                contacts = ContactPredHead()(all_attn_weights) * mask[:, 0, 0, :, :]
 
         x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True, name="emb_layer_norm_after")(x)
         
-        return {"embeddings": x, "head_weights": all_attn_weights}
-
-class ESM1bContactPredictor(hk.Module):
-    def __init__(self,
-        padding_idx: Optional[int] = 1,
-        eos_idx: Optional[int] = 2,
-        name: Optional[str] = None
-        ):
-
-        self.padding_idx = padding_idx
-        self.eos_idx = eos_idx
-        super().__init__(name=name)
-    
-    @hk.transparent
-    def __call__(self, 
-        tokens: jnp.ndarray
-        ) -> jnp.ndarray:
-        
-        output = ESM1b(head_weights=True, name="esm1b")(tokens)
-        return ContactPredHead()(tokens, output["head_weights"])
+        return {"embeddings": x * ~mask_tokens[:, :, None], 
+                "head_weights": all_attn_weights,
+                "contacts": contacts}
