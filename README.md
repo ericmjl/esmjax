@@ -32,8 +32,7 @@ There's three notebooks in this repository (in the `/notebooks` folder) to help 
 ### Requirements
 * `jax` - JAX's installation differs on whether you need hardware support or not, so follow the instructions [here](https://github.com/google/jax#installation)
 
-* `haiku` - The exact commit this repo was tested on can be found in `requirements.txt`
-
+* `haiku` - You can install `haiku` from [here](https://github.com/deepmind/dm-haiku)
 * `h5py` - Needed for model saving/loading, installation instructions [here](https://docs.h5py.org/en/stable/build.html).
 ### Remarks
 This repository exists independently of that of the original authors; I personally just found the model very fascinating, and wanted to dig deeper. Figured it may be of interest to others too! (There's still a bit more to do, primarily with packaging, but it's already capable of generating protein embeddings on acceleration hardware)
