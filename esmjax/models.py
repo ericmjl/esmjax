@@ -6,12 +6,23 @@ import jax.numpy as jnp
 from .layers import TransformerLayer, LearnedPositionalEmbeddings, ContactPredHead
 
 class ESM1b(hk.Module):
+    """Creates an ESM1b protein language model, ready for 
+    inference."""
     def __init__(self,
         padding_idx: Optional[int] = 1,
         eos_idx: Optional[int] = 2,
         head_weights: Optional[bool] = False,
         contacts: Optional[bool] = False,
         name: Optional[str] = None):
+        """Initializes the ESM1b model
+
+        Args:
+            padding_idx (Optional[int]): Token that corresponds to <pad>. Defaults to 1.
+            eos_idx (Optional[int]): Token that corresponds to <eos>. Defaults to 2.
+            head_weights (Optional[bool]): Whether to return head weights. Defaults to False.
+            contacts (Optional[bool]): Whether to return contact predictions. Defaults to False.
+            name (Optional[str]): Name for the module (custom will break weight loading). Defaults to None.
+        """
         
         self.padding_idx = padding_idx
         self.eos_idx = eos_idx
